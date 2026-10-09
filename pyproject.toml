@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rsl-news-loader"
+version = "1.0.0"
+description = "Read the RSL-News sign language translation dataset: manifests, sentences, features, videos"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+hf = ["huggingface_hub"]            # fetch from the Hugging Face dataset repo
+torch = ["torch"]                   # rsl_news.dataset
+sentencepiece = ["sentencepiece==0.2.1"]   # the baselines' tokenizer; 0.2.2 splits some ties differently
+poses = ["zstandard"]               # the .pose.npz and .face.npz files
+video = ["opencv-python"]           # the mp4s
+all = ["rsl-news-loader[hf,torch,sentencepiece,poses,video]"]
+
+[tool.setuptools]
+packages = ["rsl_news"]
