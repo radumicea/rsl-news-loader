@@ -167,8 +167,8 @@ class Windows:
 
 class Frames:
     """Per-frame data: dataset/<segment>.<name>.npy ([frames, ...]) or .npz. The landmarks'
-    .npz files (pose, face; RSL-News's extract_poses.py) are read in chunks; `arrays` picks
-    some of their arrays (one name: that array; a list or None: a dict)."""
+    .npz files (pose, face, rtmw; RSL-News's extract_poses_*.py) are read in chunks; `arrays`
+    picks some of their arrays (one name: that array; a list or None: a dict)."""
 
     def __init__(self, name, arrays=None, fps=FPS):
         self.name, self.arrays, self.fps = name, arrays, fps
@@ -238,7 +238,7 @@ class Video:
 
 
 def decode(blob, fmt, frames):
-    """One chunk of a .pose.npz or .face.npz (RSL-News's extract_poses.py) -> {name: array}.
+    """One chunk of a landmarks .npz (RSL-News's extract_poses_*.py) -> {name: array}.
     The chunk holds the arrays one after another, each with frames on the last axis, as unsigned
     ints of its bit patterns, each frame minus the one before (modulo 2^bits), bytes grouped by
     significance, zstd-compressed."""
@@ -257,7 +257,7 @@ def decode(blob, fmt, frames):
 
 
 def load(path, start=0, stop=None):
-    """Frames [start, stop) of a .pose.npz or .face.npz (default: all) -> {name: array}.
+    """Frames [start, stop) of a landmarks .npz (default: all) -> {name: array}.
     Only the chunks holding them are read."""
     with np.load(path) as z:
         fmt = json.loads(str(z['format']))

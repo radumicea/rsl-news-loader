@@ -14,7 +14,7 @@ dependencies = ["numpy"]
 hf = ["huggingface_hub"]            # fetch from the Hugging Face dataset repo
 torch = ["torch"]                   # rsl_news.dataset
 sentencepiece = ["sentencepiece==0.2.1"]   # the baselines' tokenizer; 0.2.2 splits some ties differently
-poses = ["zstandard"]               # the .pose.npz and .face.npz files
+poses = ["zstandard"]               # the landmarks: .pose_mp.npz, .face_mp.npz, .pose_rtmw.npz
 video = ["opencv-python"]           # the mp4s
 all = ["rsl-news-loader[hf,torch,sentencepiece,poses,video]"]
 

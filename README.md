@@ -30,8 +30,8 @@ One sentence: the features between its timestamps, its text, and its token ids.
 - **Features** come from a reader, or a dict of readers:
   - `Windows(name, size, stride)`: `segment_<i>.<name>.npy`, one row per window of
     frames; a sentence gets the windows that lie entirely inside it.
-  - `Frames(name)`: per-frame data, `segment_<i>.<name>.npy` or the `.pose.npz` and
-    `.face.npz` landmarks; a sentence gets its frames.
+  - `Frames(name)`: per-frame data, `segment_<i>.<name>.npy` or the `.pose_mp.npz`,
+    `.face_mp.npz` and `.pose_rtmw.npz` landmarks; a sentence gets its frames.
   - `Video()`: the frames of `mp4s/.../segment_<i>.mp4`.
 - **Timing** (`timing=`) decides which stretch of the segment a sample covers.
   `Extend(before, after, weight)` adds seconds before and after the sentence, a fixed
