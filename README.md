@@ -28,10 +28,12 @@ test[0]       # {'features': the windows inside the sentence, 'tokens', 'text', 
 One sentence: the features between its timestamps, its text, and its token ids.
 
 - **Features** come from a reader, or a dict of readers:
-  - `Windows(name, size, stride)`: `segment_<i>.<name>.npy`, one row per window of
-    frames; a sentence gets the windows that lie entirely inside it.
-  - `Frames(name)`: per-frame data, `segment_<i>.<name>.npy` or the `.pose_mp.npz`,
-    `.face_mp.npz` and `.pose_rtmw.npz` landmarks; a sentence gets its frames.
+  - `Windows(name, size, stride)`: `segment_<i>.<name>.npz` (RSL-News's `.bsl5k.npz`),
+    one row per window of frames; a sentence gets the windows that lie entirely inside it.
+  - `Frames(name)`: per-frame data, as the `.pose_mp.npz`, `.face_mp.npz` and
+    `.pose_rtmw.npz` landmarks; a sentence gets its frames.
+  - Both read RSL-News's `.npz` files, which `rsl_news.files` defines: `load(path, start,
+    stop)` decodes only the chunks holding those rows, and `save(path, arrays)` writes one.
   - `Video()`: the frames of `mp4s/.../segment_<i>.mp4`.
 - **Timing** (`timing=`) decides which stretch of the segment a sample covers.
   `Extend(before, after, weight)` adds seconds before and after the sentence, a fixed
@@ -44,7 +46,7 @@ One sentence: the features between its timestamps, its text, and its token ids.
   tokenizer's `lambda texts: tok(texts)['input_ids']`; without one, a sample has only
   the text.
 
-`rsl_news` without `.dataset` needs only numpy; the extras add Hugging Face
+`rsl_news` without `.dataset` needs only numpy and zstandard; the extras add Hugging Face
 (`hf`), PyTorch (`torch`), the tokenizer (`sentencepiece`), the landmarks (`poses`)
 and the videos (`video`).
 
@@ -56,7 +58,7 @@ The same locally and on Hugging Face (`<episode>` is the video id for PrimaTV,
 ```
 manifests/<prima|protv|digi24>_manifest.json     broadcasts, their split, their segments' frames [start, end)
 dataset/<Channel>/<episode>/segment_<i>.json     sentences: start, end (seconds), text
-dataset/<Channel>/<episode>/segment_<i>.<name>.npy|.npz   the segment's features
+dataset/<Channel>/<episode>/segment_<i>.<name>.npz   the segment's features (rsl_news.files)
 tokenizer/spm_unigram_lowercase_16k.model        the baselines' SentencePiece model (lowercased text)
 mp4s/<Channel>/<episode>/segment_<i>.mp4         the videos (download.sh; not on Hugging Face)
 ```

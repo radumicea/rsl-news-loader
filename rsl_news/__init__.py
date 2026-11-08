@@ -17,7 +17,7 @@ video id for PrimaTV, `<yyyy>/<mm>/<dd>` otherwise; see README.md):
 
     manifests/<prima|protv|digi24>_manifest.json   broadcasts, their split and segments (frames [start, end))
     dataset/<Channel>/<episode>/segment_<i>.json   sentences: start, end (seconds), text
-    dataset/<Channel>/<episode>/segment_<i>.<name>.npy|.npz   features of the segment
+    dataset/<Channel>/<episode>/segment_<i>.<name>.npz        features of the segment (rsl_news.files)
     tokenizer/                                     the SentencePiece model of the baselines
     mp4s/<Channel>/<episode>/segment_<i>.mp4       the videos (RSL-News's download.sh; not on Hugging Face)
 """
@@ -29,6 +29,8 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import numpy as np
+
+from .files import length, load
 
 FPS = 25
 # manifest -> channel folder, in the order the segments are listed
@@ -136,21 +138,21 @@ def frame_range(start, end, frames, fps=FPS):
 
 
 class Windows:
-    """Features computed over windows of frames: dataset/<segment>.<name>.npy, [windows, ...], where
-    window k covers frames [k * stride, k * stride + size). A span gets the windows that lie
-    entirely inside its frames."""
+    """Features computed over windows of frames: dataset/<segment>.<name>.npz (RSL-News's
+    .bsl5k.npz; rsl_news.files), one array [windows, ...], where window k covers frames
+    [k * stride, k * stride + size). A span gets the windows that lie entirely inside its frames."""
 
     def __init__(self, name, size, stride, fps=FPS):
         self.name, self.size, self.stride, self.fps = name, size, stride, fps
 
     def files(self, segment):
-        return [f'dataset/{segment.name}.{self.name}.npy']
+        return [f'dataset/{segment.name}.{self.name}.npz']
 
     def available(self, data, segment):
         return data.path(self.files(segment)[0]).exists()
 
     def length(self, data, segment):
-        return np.load(data.path(self.files(segment)[0]), mmap_mode='r').shape[0]
+        return length(data.path(self.files(segment)[0]))
 
     def steps(self, data, segment, start, end, length=None):
         first = math.ceil(round(start * self.fps, 6))
@@ -162,26 +164,22 @@ class Windows:
         return (np.arange(first, stop) * self.stride + self.size / 2) / self.fps
 
     def read(self, data, segment, first, stop):
-        return np.load(data.path(self.files(segment)[0]), mmap_mode='r')[first:stop]
+        return next(iter(load(data.path(self.files(segment)[0]), first, stop, clip=True).values()))
 
 
 class Frames:
-    """Per-frame data: dataset/<segment>.<name>.npy ([frames, ...]) or .npz. The landmarks'
-    .npz files (pose, face, rtmw; RSL-News's extract_poses_*.py) are read in chunks; `arrays`
-    picks some of their arrays (one name: that array; a list or None: a dict)."""
+    """Per-frame data: dataset/<segment>.<name>.npz, as the landmarks (pose_mp, face_mp,
+    pose_rtmw; RSL-News's extract_poses_*.py; rsl_news.files). `arrays` picks some of their
+    arrays (one name: that array; a list or None: a dict)."""
 
     def __init__(self, name, arrays=None, fps=FPS):
         self.name, self.arrays, self.fps = name, arrays, fps
 
-    def _file(self, data, segment):
-        npz = f'dataset/{segment.name}.{self.name}.npz'
-        return npz if data.path(npz).exists() or not data.path(npz[:-1] + 'y').exists() else npz[:-1] + 'y'
-
     def files(self, segment):
-        return [f'dataset/{segment.name}.{self.name}.npz', f'dataset/{segment.name}.{self.name}.npy']
+        return [f'dataset/{segment.name}.{self.name}.npz']
 
     def available(self, data, segment):
-        return data.path(self._file(data, segment)).exists()
+        return data.path(self.files(segment)[0]).exists()
 
     def length(self, data, segment):
         return segment.frames
@@ -193,10 +191,7 @@ class Frames:
         return (np.arange(first, stop) + 0.5) / self.fps
 
     def read(self, data, segment, first, stop):
-        path = data.path(self._file(data, segment))
-        if path.suffix == '.npy':
-            return np.load(path, mmap_mode='r')[first:stop]
-        arrays = load(path, first, stop)
+        arrays = load(data.path(self.files(segment)[0]), first, stop)
         if isinstance(self.arrays, str):
             return arrays[self.arrays]
         return arrays if self.arrays is None else {k: arrays[k] for k in self.arrays}
@@ -235,42 +230,6 @@ class Video:
             frames.append(frame[:, :, ::-1])
         cap.release()
         return np.stack(frames) if frames else np.zeros((0, 0, 0, 3), np.uint8)
-
-
-def decode(blob, fmt, frames):
-    """One chunk of a landmarks .npz (RSL-News's extract_poses_*.py) -> {name: array}.
-    The chunk holds the arrays one after another, each with frames on the last axis, as unsigned
-    ints of its bit patterns, each frame minus the one before (modulo 2^bits), bytes grouped by
-    significance, zstd-compressed."""
-    import zstandard
-    data, pos, out = zstandard.ZstdDecompressor().decompress(blob), 0, {}
-    for k, (dtype, shape) in fmt['arrays'].items():
-        n = np.dtype(dtype).itemsize
-        size = n * frames * math.prod(shape)
-        planes = np.frombuffer(data, np.uint8, size, pos).reshape(n, -1)
-        pos += size
-        d = np.ascontiguousarray(planes.T).view(f'<u{n}').reshape(*shape, frames)
-        out[k] = np.moveaxis(np.cumsum(d, axis=-1, dtype=d.dtype).view(dtype), -1, 0)
-    if pos != len(data):
-        raise ValueError('chunk size does not match its format')
-    return out
-
-
-def load(path, start=0, stop=None):
-    """Frames [start, stop) of a landmarks .npz (default: all) -> {name: array}.
-    Only the chunks holding them are read."""
-    with np.load(path) as z:
-        fmt = json.loads(str(z['format']))
-        frames, chunk = fmt['frames'], fmt['chunk']
-        stop = frames if stop is None else stop
-        if not 0 <= start <= stop <= frames:
-            raise ValueError(f'frames [{start}, {stop}) are not within [0, {frames})')
-        first = start // chunk
-        parts = [decode(z[f'chunk_{i:05d}'], fmt, min(chunk, frames - i * chunk))
-                 for i in range(first, -(-stop // chunk))]
-        out = {k: np.concatenate([p[k] for p in parts])[start - first * chunk:stop - first * chunk]
-               if parts else np.zeros((0, *shape), dtype) for k, (dtype, shape) in fmt['arrays'].items()}
-    return out
 
 
 # ---------------------------------------------------------------- timing
