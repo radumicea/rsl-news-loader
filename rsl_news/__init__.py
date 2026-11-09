@@ -275,20 +275,19 @@ class Extend:
 # ---------------------------------------------------------------- text
 
 class SentencePiece:
-    """A SentencePiece model as a tokenizer: texts -> token ids (lowercased first if `lowercase`).
+    """A SentencePiece model as a tokenizer: texts -> token ids.
     `model` is a path under the dataset's root (fetched from the hub if missing) or anywhere."""
 
-    def __init__(self, data, model='tokenizer/spm_unigram_lowercase_16k.model', lowercase=True):
+    def __init__(self, data, model='tokenizer/spm_unigram_cased_16k.model'):
         import sentencepiece
         path = Path(model)
         if not path.is_absolute():
             data.fetch([model])
             path = data.path(model)
         self.processor = sentencepiece.SentencePieceProcessor(model_file=str(path))
-        self.lowercase = lowercase
 
     def __call__(self, texts):
-        return self.processor.encode([t.lower() for t in texts] if self.lowercase else list(texts))
+        return self.processor.encode(list(texts))
 
     @property
     def pieces(self):

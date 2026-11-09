@@ -59,6 +59,6 @@ The same locally and on Hugging Face (`<episode>` is the video id for PrimaTV,
 manifests/<prima|protv|digi24>_manifest.json     broadcasts, their split, their segments' frames [start, end)
 dataset/<Channel>/<episode>/segment_<i>.json     sentences: start, end (seconds), text
 dataset/<Channel>/<episode>/segment_<i>.<name>.npz   the segment's features (rsl_news.files)
-tokenizer/spm_unigram_lowercase_16k.model        the baselines' SentencePiece model (lowercased text)
+tokenizer/spm_unigram_cased_16k.model            the baselines' SentencePiece model
 mp4s/<Channel>/<episode>/segment_<i>.mp4         the videos (download.sh; not on Hugging Face)
 ```

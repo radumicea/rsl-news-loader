@@ -12,11 +12,15 @@ are video frames, or windows of frames for features. load() decodes only the chu
 """
 import json
 import math
+import os
+import struct
+import zipfile
 
 import numpy as np
 import zstandard
 
-CHUNK = 256  # rows compressed together; a clip only decodes the chunks it touches
+CHUNK = 64  # rows compressed together; a clip only decodes the chunks it touches
+_INDEX = {}  # path -> ((mtime, size), format, chunk offsets): index()
 
 
 def encode(arrays, delta=True):
@@ -68,28 +72,63 @@ def save(path, arrays, delta=True):
     np.savez(path, format=np.array(json.dumps(fmt)), **chunks)
 
 
+def index(path):
+    """A file's format and where each chunk's bytes are in it: {chunk number: (offset, size)}, read
+    once per process and kept (until the file changes), so that load() reads only the bytes of the
+    chunks it needs instead of the whole zip directory every time. save() stores the chunks
+    uncompressed, each as a 1-D uint8 .npy inside the zip."""
+    path = os.fspath(path)
+    st = os.stat(path)
+    key = (st.st_mtime_ns, st.st_size)
+    hit = _INDEX.get(path)
+    if hit is not None and hit[0] == key:
+        return hit[1], hit[2]
+    where = {}
+    with open(path, 'rb') as f, zipfile.ZipFile(f) as z:
+        with z.open('format.npy') as g:
+            fmt = json.loads(str(np.lib.format.read_array(g)))
+        for info in z.infolist():
+            if not info.filename.startswith('chunk_'):
+                continue
+            if info.compress_type != zipfile.ZIP_STORED:
+                raise ValueError(f'{path}: {info.filename} is compressed; save() writes them stored')
+            f.seek(info.header_offset)
+            local = f.read(30)                                   # the entry's local header
+            name_len, extra_len = struct.unpack('<HH', local[26:30])
+            f.seek(info.header_offset + 30 + name_len + extra_len)
+            version = np.lib.format.read_magic(f)
+            header = np.lib.format.read_array_header_1_0 if version == (1, 0) else np.lib.format.read_array_header_2_0
+            shape, _, dtype = header(f)
+            if dtype != np.uint8 or len(shape) != 1:
+                raise ValueError(f'{path}: {info.filename} is not a uint8 vector')
+            where[int(info.filename[6:11])] = (f.tell(), shape[0])
+    _INDEX[path] = (key, fmt, where)
+    return fmt, where
+
+
 def load(path, start=0, stop=None, clip=False):
     """Rows [start, stop) of a file (default: all) -> {name: array}. Only the chunks holding
     them are read. clip: cut [start, stop) to the file, as slicing an array does, instead of
     raising an error."""
-    with np.load(path) as z:
-        fmt = json.loads(str(z['format']))
-        frames, chunk = fmt['frames'], fmt['chunk']
-        stop = frames if stop is None else stop
-        if clip:
-            start = min(max(start, 0), frames)
-            stop = min(max(stop, start), frames)
-        if not 0 <= start <= stop <= frames:
-            raise ValueError(f'frames [{start}, {stop}) are not within [0, {frames})')
-        first = start // chunk
-        parts = [decode(z[f'chunk_{i:05d}'], fmt, min(chunk, frames - i * chunk))
-                 for i in range(first, -(-stop // chunk))]
-        out = {k: np.concatenate([p[k] for p in parts])[start - first * chunk:stop - first * chunk]
-               if parts else np.zeros((0, *shape), dtype) for k, (dtype, shape) in fmt['arrays'].items()}
-    return out
+    fmt, where = index(path)
+    frames, chunk = fmt['frames'], fmt['chunk']
+    stop = frames if stop is None else stop
+    if clip:
+        start = min(max(start, 0), frames)
+        stop = min(max(stop, start), frames)
+    if not 0 <= start <= stop <= frames:
+        raise ValueError(f'frames [{start}, {stop}) are not within [0, {frames})')
+    first = start // chunk
+    parts = []
+    with open(path, 'rb') as f:
+        for i in range(first, -(-stop // chunk)):
+            offset, size = where[i]
+            f.seek(offset)
+            parts.append(decode(f.read(size), fmt, min(chunk, frames - i * chunk)))
+    return {k: np.concatenate([p[k] for p in parts])[start - first * chunk:stop - first * chunk]
+            if parts else np.zeros((0, *shape), dtype) for k, (dtype, shape) in fmt['arrays'].items()}
 
 
 def length(path):
     """The number of rows (frames or windows) of a file, without decoding it."""
-    with np.load(path) as z:
-        return json.loads(str(z['format']))['frames']
+    return index(path)[0]['frames']
